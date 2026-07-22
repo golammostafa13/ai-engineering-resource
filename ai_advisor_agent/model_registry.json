@@ -1,0 +1,20 @@
+{
+  "_comment": "Offline metadata + fallback pool for CLOUD models. Used when a provider's API key is NOT set (so the router can still route across providers), and to tag/price models even when discovered live. Edit freely to add the models you actually use. Local Ollama models are auto-discovered live and are NOT listed here.",
+
+  "anthropic": [
+    {"name": "claude-opus-4-8",           "capability": "Reasoning", "tier": "Large",  "cost": "$$$ premium"},
+    {"name": "claude-sonnet-5",           "capability": "General",   "tier": "Medium", "cost": "$$ mid"},
+    {"name": "claude-haiku-4-5-20251001", "capability": "General",   "tier": "Small",  "cost": "$ cheap"},
+    {"name": "claude-fable-5",            "capability": "Writing",   "tier": "Medium", "cost": "$$ mid"}
+  ],
+
+  "openai": [
+    {"name": "gpt-5",       "capability": "General",   "tier": "Large",  "cost": "$$$ premium"},
+    {"name": "gpt-5-mini",  "capability": "General",   "tier": "Small",  "cost": "$ cheap"},
+    {"name": "o3",          "capability": "Reasoning", "tier": "Large",  "cost": "$$$ premium"}
+  ],
+
+  "groq": [
+    {"name": "llama-3.3-70b-versatile", "capability": "General", "tier": "Large", "cost": "$ cheap-fast"}
+  ]
+}

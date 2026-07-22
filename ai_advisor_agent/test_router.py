@@ -64,12 +64,72 @@ def test_route_simple_task_stays_cheap():
     return check("simple task -> Small tier (cheap)", router.route(tax, FLEET)["tier"], "Small")
 
 
-def test_route_private_stays_local():
-    # A Private task must never route to a cloud provider, even if a cloud
-    # flagship would otherwise be the best fit.
+def test_route_escalates_past_tiny_specialist():
+    # Large coding task, but the only coder is Small and a larger general model
+    # exists → escalate to the big general model instead of the tiny specialist.
+    fleet = [
+        {"name": "tiny-coder", "capability": "Coding", "tier": "Small", "provider": "ollama"},
+        {"name": "big-general", "capability": "General", "tier": "Large", "provider": "ollama"},
+    ]
+    tax = {"complexity": "Large", "capability": "Coding", "model_type": "Standard"}
+    return check("large task escalates past tiny specialist",
+                 router.route(tax, fleet)["name"], "big-general")
+
+
+def test_route_keeps_specialist_when_big_enough():
+    # If a large-enough specialist exists, keep it (don't switch to general).
+    fleet = [
+        {"name": "tiny-coder", "capability": "Coding", "tier": "Small", "provider": "ollama"},
+        {"name": "big-coder", "capability": "Coding", "tier": "Large", "provider": "ollama"},
+        {"name": "big-general", "capability": "General", "tier": "Large", "provider": "ollama"},
+    ]
+    tax = {"complexity": "Large", "capability": "Coding", "model_type": "Standard"}
+    return check("large coding keeps the big coder",
+                 router.route(tax, fleet)["name"], "big-coder")
+
+
+def test_priority_quality_picks_bigger():
+    # A medium task with Quality priority should reach for the Large tier.
+    tax = {"complexity": "Medium", "capability": "General", "model_type": "Standard",
+           "priority": "Quality"}
+    return check("Quality medium → Large tier", router.route(tax, FLEET)["tier"], "Large")
+
+
+def test_priority_cost_picks_smaller():
+    tax = {"complexity": "Medium", "capability": "General", "model_type": "Standard",
+           "priority": "Cost"}
+    return check("Cost priority → Small tier", router.route(tax, FLEET)["tier"], "Small")
+
+
+def test_refine_medium_to_large_reasoning():
+    tax = {"complexity": "Medium", "capability": "General", "model_type": "Standard"}
+    out = router._refine_taxonomy(dict(tax), "Prove this theorem, step by step")
+    return check("reasoning signal → Large+Reasoning",
+                 out["complexity"] == "Large" and out["model_type"] == "Reasoning", True)
+
+
+def test_security_no_longer_forces_local():
+    # 'Private' must NOT pin routing to local anymore — a cloud flagship can win.
     tax = {"complexity": "Large", "capability": "Reasoning", "model_type": "Reasoning",
            "security": "Private"}
-    return check("private -> local provider", router.route(tax, FLEET)["provider"], "ollama")
+    return check("security does not force local",
+                 router.route(tax, FLEET)["capability"], "Reasoning")
+
+
+def test_scope_filters_pool():
+    ok = True
+    local = router._select_pool(FLEET, scope="local")
+    cloud = router._select_pool(FLEET, scope="cloud")
+    ok &= check("scope=local → only ollama",
+                all(m["provider"] == "ollama" for m in local) and len(local) > 0, True)
+    ok &= check("scope=cloud → no ollama",
+                all(m["provider"] != "ollama" for m in cloud) and len(cloud) > 0, True)
+    # forgiving: 'cloud'/'local' passed as only_provider are treated as a scope
+    ok &= check("only_provider='cloud' behaves like scope=cloud",
+                router._select_pool(FLEET, only_provider="cloud") == cloud, True)
+    ok &= check("only_provider='local' behaves like scope=local",
+                router._select_pool(FLEET, only_provider="local") == local, True)
+    return ok
 
 
 def test_route_falls_back_to_general():
@@ -90,7 +150,13 @@ def main():
         test_route_reasoning_flag_wins(),
         test_route_hard_task_can_go_cloud(),
         test_route_simple_task_stays_cheap(),
-        test_route_private_stays_local(),
+        test_route_escalates_past_tiny_specialist(),
+        test_route_keeps_specialist_when_big_enough(),
+        test_priority_quality_picks_bigger(),
+        test_priority_cost_picks_smaller(),
+        test_refine_medium_to_large_reasoning(),
+        test_security_no_longer_forces_local(),
+        test_scope_filters_pool(),
         test_route_falls_back_to_general(),
         test_pick_router_brain(),
     ]

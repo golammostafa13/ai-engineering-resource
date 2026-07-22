@@ -42,6 +42,21 @@ Verify: does the **Taxonomy** line look right, and is the **→ Routed to** mode
 .venv/bin/python ai_advisor_agent/router.py "Write a haiku about the rain"
 ```
 
+## Layer 4 — Claude subscription mode (no API key)
+
+Uses your Claude Pro/Max **subscription** through the `claude` CLI — no API key, no per-token
+billing. `--claude` restricts routing to the Claude tiers so it auto-switches among them:
+```bash
+.venv/bin/python ai_advisor_agent/router.py --claude "What is the capital of France? One word."   # -> haiku (Small)
+.venv/bin/python ai_advisor_agent/router.py --claude "Prove sqrt(2) is irrational, step by step."  # -> opus (Reasoning/Large)
+```
+Verify:
+- Simple prompts route to **haiku**, hard/reasoning prompts to **opus** — proving auto-switch.
+- The **router brain** line shows a *local* (ollama) model, not a Claude one — deciding the tier
+  never spends subscription usage (falls back to a Claude tier only if no local model exists).
+- Requires `claude` installed and logged in. Without it, the Claude tiers show as `registry`/
+  not-runnable and execution is skipped with a clear message.
+
 ## Live test-case matrix
 
 Run each with `--dry-run` first (fast). Expected routing is described by **tier + capability**,

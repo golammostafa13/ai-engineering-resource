@@ -20,6 +20,8 @@ OpenAI-compatible chat format, so one client shape serves them all.
 import json
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import requests
@@ -27,6 +29,10 @@ from openai import OpenAI
 
 OLLAMA_HOST = "http://localhost:11434"
 REGISTRY_PATH = Path(__file__).with_name("model_registry.json")
+
+# The `claude` CLI runs on your Pro/Max SUBSCRIPTION (no API key, no per-token
+# billing). We reach it via subprocess, not the OpenAI-compatible HTTP client.
+CLAUDE_CLI = "claude-cli"
 
 # Cloud providers reachable via an OpenAI-compatible endpoint. Adding another is
 # just one more entry here plus (optionally) rows in model_registry.json.
@@ -186,11 +192,24 @@ def _discover_cloud(provider, cfg):
     return models
 
 
+def _discover_claude_cli():
+    """Claude subscription models, reached through the `claude` CLI. Available
+    (runnable, free-with-subscription) whenever the CLI is installed and logged
+    in; otherwise routable-on-paper from the registry."""
+    installed = shutil.which("claude") is not None
+    out = _registry_models(CLAUDE_CLI)
+    for m in out:
+        m["live"] = installed
+        m["runnable"] = installed
+    return out
+
+
 def discover_all():
     """Every model the router can consider, across all providers, tagged and
     merged into one pool. Each dict carries 'provider', 'runnable' (can we call
     it now?) and 'live' (discovered from a live API vs the offline registry)."""
     models = _discover_ollama()
+    models.extend(_discover_claude_cli())
     for provider, cfg in CLOUD_PROVIDERS.items():
         models.extend(_discover_cloud(provider, cfg))
     return models
@@ -206,15 +225,36 @@ def _client_for(model):
     return OpenAI(base_url=cfg["base_url"], api_key=key)
 
 
+def _run_claude_cli(model, prompt):
+    """Execute via the `claude` CLI on the user's subscription (no API key)."""
+    try:
+        result = subprocess.run(
+            ["claude", "-p", prompt, "--model", model["name"]],
+            capture_output=True, text=True, timeout=300,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, f"claude CLI failed: {e}"
+    if result.returncode != 0:
+        return None, f"claude CLI error: {result.stderr.strip()[:200]}"
+    return result.stdout.strip(), "ok"
+
+
 def run_model(model, prompt, temperature=0.7):
     """Run the prompt on the chosen model. Returns (answer, note).
 
-    Cloud models are only called when their key is set (per the chosen design);
-    otherwise the switch decision stands but execution is skipped gracefully.
+    Cloud API models are only called when their key is set (per the chosen
+    design); claude-cli runs on the subscription; otherwise the switch decision
+    stands but execution is skipped gracefully.
     """
     if not model.get("runnable", model["provider"] == "ollama"):
+        if model["provider"] == CLAUDE_CLI:
+            return None, "skipped — install & log in to the `claude` CLI to use your subscription"
         env = CLOUD_PROVIDERS.get(model["provider"], {}).get("key_env", "the API key")
         return None, f"skipped — set {env} to actually call {model['provider']}"
+
+    if model["provider"] == CLAUDE_CLI:
+        return _run_claude_cli(model, prompt)
+
     client = _client_for(model)
     resp = client.chat.completions.create(
         model=model["name"],

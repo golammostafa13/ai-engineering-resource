@@ -24,6 +24,35 @@ It is a **top layer over many providers**: it switches models across BOTH local 
 
 Pure routing logic is covered by fast unit tests in [`test_router.py`](../ai_advisor_agent/test_router.py) (no Ollama or network needed) — now including cross-provider cases. This realizes the "Commercial Provider Upgrade Path" section below: adding another provider is one entry in `CLOUD_PROVIDERS` plus (optionally) rows in the registry.
 
+#### Using a Claude Pro/Max **subscription** (no API key)
+A subscription is **not** the same as API access — it gives you no API key, and the Anthropic API is billed separately per token. But the subscription *does* authenticate the **`claude` CLI**, which can answer a single prompt non-interactively (`claude -p "<prompt>" --model <haiku|sonnet|opus>`). So the router has a dedicated **`claude-cli` provider** ([`providers.py`](../ai_advisor_agent/providers.py)) that reaches Claude through the CLI via subprocess — **no API key, no per-token billing**, just your existing subscription.
+
+*   It appears in the pool automatically whenever the `claude` binary is installed and logged in (else it's routable-on-paper from the registry).
+*   The subscription tiers are registered as `haiku` (Small), `sonnet` (Medium), `opus` (Reasoning/Large) — so a prompt auto-switches: trivial → haiku, hard/reasoning → opus.
+*   Run **Claude-only** (switch among just the Claude tiers) with `--claude`, or keep the full cross-provider pool (local Ollama stays cheapest for trivial work) by omitting it:
+
+    ```bash
+    # auto-switch among your Claude subscription tiers only
+    ../.venv/bin/python router.py --claude "Fix this race condition in my worker pool"
+    # or route across everything (local + subscription + any keyed cloud)
+    ../.venv/bin/python router.py "Fix this race condition in my worker pool"
+    ```
+*   The classifier ("router brain") still runs on a **free local** model when one is available, so deciding *which* Claude tier to use doesn't itself spend subscription usage. Private-flagged prompts stay local and never reach the CLI.
+
+#### Exposing the router as an **MCP tool**
+The router is also wrapped as an MCP server ([`mcp_server.py`](../ai_advisor_agent/mcp_server.py)) so any MCP-capable agent (Claude Code / Desktop) can call it — see [`MCP.md`](../ai_advisor_agent/MCP.md) for setup. **Important limitation:** an MCP tool *cannot* reach into the host agent and flip its model selector; the protocol doesn't allow changing the host's own model. So it offers two realistic shapes instead:
+*   `recommend_model(prompt)` — **advisory**: returns the best model + taxonomy + reasoning, runs nothing.
+*   `run_with_best_model(prompt)` — **delegation**: routes *and runs* the prompt on the chosen model, returning the answer. This is real "switching" by offloading a sub-task (a big session pushes a trivial reformat down to a free local model, or a hard one up to opus).
+
+Execution policy: free local Ollama always runs; a paid/subscription pick returns the *decision* but only executes when the caller passes `allow_paid=true` — no surprise spend. Both tools take `only_provider` (e.g. `"claude-cli"`) and `brain`. The decision path is a print-free `router.decide()` so stdout stays clean for the MCP stdio protocol.
+
+**What makes routing capable (beyond the raw classifier):**
+*   **Taxonomy refinement (`_refine_taxonomy`).** A tiny local classifier underrates hard tasks. The router post-processes its output with unambiguous prompt signals: **strong** signals (`race condition`, `deadlock`, `distributed`, `architect`, `prove`, `theorem`, `tradeoffs`, …) raise complexity to Large from *both Small and Medium*; **reasoning** signals additionally set `model_type=Reasoning` so proofs/planning reach a reasoning-grade model (opus); **soft** signals (`refactor`, `optimize`, `migrate`, …) raise only Small→Large; and safe capability nudges correct clear mistakes (a code fence → Coding, image words → Vision). It's task understanding, not a model list.
+*   **Priority-aware tiering (`_target_tier`).** The `priority` axis now shifts the pick: `Quality` → one tier up, `Cost`/`Speed` → one tier down, `Balanced` follows complexity. So "quality, no matter the cost" reaches a bigger model and "cheapest that works" a smaller one.
+*   **Tier escalation.** A Large task never gets stuck on a tiny specialist — if the capability-matched models are all smaller than the target tier, larger general models are pulled in (see step 2b in `route()`).
+*   **Weak-classifier override.** When the local brain misclassifies, use `--brain <model>` (e.g. `--brain llama3.2`, or a Claude tier for top-quality routing at a small subscription cost).
+*   **`claude -p` is agentic.** The CLI answers as a Claude Code *agent* with repo file access, not a plain completion — so an abstract prompt like *"fix this race condition in my worker pool"* makes it read the current directory and, finding no such code, ask you to point at the file. Run the router **from inside the project that holds the code** (and name the file), or paste the code into the prompt, to get an actual fix.
+
 ---
 
 ## 🏗️ System Architecture

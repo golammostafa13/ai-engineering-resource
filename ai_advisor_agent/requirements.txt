@@ -1,0 +1,8 @@
+# Core runtime for the AI Model Router / Advisor
+openai>=2.0          # OpenAI-compatible client (used for Ollama + cloud providers)
+ddgs>=9.0            # free web search for the advisor (no API key)
+requests>=2.30       # Ollama /api/tags discovery + cloud model listing
+mcp[cli]>=1.20       # MCP server + client (exposes the router as agent tools)
+
+# Optional — only needed to regenerate the Bengali PDF doc (README-bangla.pdf):
+# weasyprint>=69

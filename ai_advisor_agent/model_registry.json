@@ -1,6 +1,13 @@
 {
   "_comment": "Offline metadata + fallback pool for CLOUD models. Used when a provider's API key is NOT set (so the router can still route across providers), and to tag/price models even when discovered live. Edit freely to add the models you actually use. Local Ollama models are auto-discovered live and are NOT listed here.",
 
+  "_comment_claude_cli": "'claude-cli' uses your Claude Pro/Max SUBSCRIPTION via the `claude` CLI (`claude -p --model <name>`) — no API key, no per-token billing. Names are the CLI's model aliases. Available automatically when the `claude` binary is installed and logged in.",
+  "claude-cli": [
+    {"name": "haiku",  "capability": "General", "tier": "Small",  "cost": "Subscription"},
+    {"name": "sonnet", "capability": "General", "tier": "Medium", "cost": "Subscription"},
+    {"name": "opus",   "capability": "General", "tier": "Large",  "cost": "Subscription"}
+  ],
+
   "anthropic": [
     {"name": "claude-opus-4-8",           "capability": "Reasoning", "tier": "Large",  "cost": "$$$ premium"},
     {"name": "claude-sonnet-5",           "capability": "General",   "tier": "Medium", "cost": "$$ mid"},
